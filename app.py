@@ -1086,3 +1086,138 @@ elif seccion == "Carga inicial":
                 st.error(
                     f"Falló la carga inicial: {e}"
                 )
+
+
+
+# ============================================
+# ALERTAS DE MANTENIMIENTO PREVENTIVO
+# ============================================
+
+def obtener_alertas_mantenimiento():
+    try:
+        config = (
+            supabase.table("configuracion_mantenimiento")
+            .select("intervalo_km,alerta_anticipada_km")
+            .eq("tipo_servicio", "Cambio de aceite")
+            .single()
+            .execute()
+        )
+
+        intervalo = int(config.data["intervalo_km"])
+        anticipacion = int(config.data["alerta_anticipada_km"])
+
+        servicios = (
+            supabase.table("mantenimientos")
+            .select("placa,fecha,kilometraje")
+            .eq("tipo_servicio", "Cambio de aceite")
+            .order("fecha", desc=True)
+            .order("id", desc=True)
+            .execute()
+        ).data or []
+
+        lecturas = (
+            supabase.table("kilometraje")
+            .select("placa,fecha,kilometraje")
+            .order("fecha", desc=True)
+            .order("id", desc=True)
+            .execute()
+        ).data or []
+
+        ultimos_servicios = {}
+        for servicio in servicios:
+            placa = servicio["placa"]
+            if placa not in ultimos_servicios:
+                ultimos_servicios[placa] = servicio
+
+        ultimas_lecturas = {}
+        for lectura in lecturas:
+            placa = lectura["placa"]
+            if placa not in ultimas_lecturas:
+                ultimas_lecturas[placa] = lectura
+
+        resultados = []
+
+        for placa, servicio in ultimos_servicios.items():
+            if placa not in ultimas_lecturas:
+                continue
+
+            lectura = ultimas_lecturas[placa]
+
+            # Evitar comparar una lectura anterior al servicio.
+            if lectura["fecha"] < servicio["fecha"]:
+                continue
+
+            km_actual = int(lectura["kilometraje"])
+            km_servicio = int(servicio["kilometraje"])
+
+            if km_actual < km_servicio:
+                continue
+
+            proximo = km_servicio + intervalo
+            restantes = proximo - km_actual
+
+            if restantes <= 0:
+                estado = "Vencido"
+            elif restantes <= anticipacion:
+                estado = "Próximo"
+            else:
+                estado = "Al corriente"
+
+            resultados.append({
+                "Camioneta": placa,
+                "Kilometraje actual": km_actual,
+                "Próximo servicio": proximo,
+                "Km restantes": restantes,
+                "Estado": estado
+            })
+
+        return pd.DataFrame(resultados), None
+
+    except Exception as e:
+        return pd.DataFrame(), str(e)
+
+
+st.divider()
+st.subheader("🔧 Alertas de cambio de aceite")
+
+alertas, error_alertas = obtener_alertas_mantenimiento()
+
+if error_alertas:
+    st.error(f"No se pudieron consultar las alertas: {error_alertas}")
+
+elif alertas.empty:
+    st.info(
+        "Todavía no hay suficientes lecturas de kilometraje "
+        "posteriores a los cambios de aceite registrados."
+    )
+
+else:
+    orden = {"Vencido": 0, "Próximo": 1, "Al corriente": 2}
+
+    alertas["prioridad"] = alertas["Estado"].map(orden)
+    alertas = alertas.sort_values(
+        ["prioridad", "Km restantes"]
+    ).drop(columns=["prioridad"])
+
+    c1, c2, c3 = st.columns(3)
+
+    c1.metric(
+        "🔴 Vencidos",
+        int((alertas["Estado"] == "Vencido").sum())
+    )
+
+    c2.metric(
+        "🟡 Próximos",
+        int((alertas["Estado"] == "Próximo").sum())
+    )
+
+    c3.metric(
+        "🟢 Al corriente",
+        int((alertas["Estado"] == "Al corriente").sum())
+    )
+
+    st.dataframe(
+        alertas,
+        use_container_width=True,
+        hide_index=True
+    )
