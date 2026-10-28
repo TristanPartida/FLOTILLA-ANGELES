@@ -8,20 +8,19 @@ from supabase import create_client
 st.set_page_config(
     page_title="Control de Flotilla",
     page_icon="🚐",
-    layout="wide",
+    layout="wide"
 )
 
-# --------------------------------------------------
-# CONEXIÓN
-# --------------------------------------------------
+# ==========================================
+# CONEXION CON SUPABASE
+# ==========================================
 
 @st.cache_resource
 def conectar_supabase():
     return create_client(
         st.secrets["SUPABASE_URL"],
-        st.secrets["SUPABASE_KEY"],
+        st.secrets["SUPABASE_KEY"]
     )
-
 
 try:
     supabase = conectar_supabase()
@@ -30,9 +29,9 @@ except Exception as e:
     st.stop()
 
 
-# --------------------------------------------------
-# CONFIGURACIÓN DE CAMIONETAS
-# --------------------------------------------------
+# ==========================================
+# CAMIONETAS
+# ==========================================
 
 CAMIONETAS = [
     "PEZ129C", "PCJ374B", "MES712D", "NTK697C",
@@ -42,8 +41,9 @@ CAMIONETAS = [
     "MLA360D", "MLH776D", "MCM900D", "MEH772",
     "MNU185D", "KU4297A", "MES705D", "MRH934D",
     "LH1978", "MUF77FC", "LH1873", "KT62084A",
-    "LH1973", "CAMIONETA RANDY SIN PLACA", "MEZ971D",
-    "NHA715C", "DUCATO SIN PLACAS 2", "KW3160",
+    "LH1973", "CAMIONETA RANDY SIN PLACA",
+    "MEZ971D", "NHA715C", "DUCATO SIN PLACAS 2",
+    "KW3160"
 ]
 
 INICIAL = {
@@ -79,20 +79,54 @@ INICIAL = {
     "MEZ971D": (400, 0, 0),
     "NHA715C": (0, 700, 0),
     "DUCATO SIN PLACAS 2": (500, 0, 0),
-    "KW3160": (500, 0, 0),
+    "KW3160": (500, 0, 0)
 }
 
 
-# --------------------------------------------------
-# BASE DE DATOS: GASOLINA
-# --------------------------------------------------
+# ==========================================
+# FUNCIONES GENERALES
+# ==========================================
+
+def consultar_tabla(tabla, columnas, placa=None,
+                    desde=None, hasta=None):
+
+    consulta = supabase.table(tabla).select("*")
+
+    if placa and placa != "Todas":
+        consulta = consulta.eq("placa", placa)
+
+    if desde:
+        consulta = consulta.gte("fecha", str(desde))
+
+    if hasta:
+        consulta = consulta.lte("fecha", str(hasta))
+
+    respuesta = (
+        consulta.order("fecha", desc=True)
+        .limit(10000)
+        .execute()
+    )
+
+    df = pd.DataFrame(
+        respuesta.data or [],
+        columns=columnas
+    )
+
+    if not df.empty:
+        df["fecha"] = pd.to_datetime(
+            df["fecha"]
+        ).dt.date
+
+    return df
+
 
 def guardar(fecha, placa, importe, observaciones=""):
+
     datos = {
         "fecha": str(fecha),
         "placa": placa,
         "importe": float(importe),
-        "observaciones": observaciones.strip(),
+        "observaciones": observaciones.strip()
     }
 
     return (
@@ -103,32 +137,15 @@ def guardar(fecha, placa, importe, observaciones=""):
 
 
 def leer(desde=None, hasta=None, placa=None):
-    consulta = supabase.table("gasolina").select(
-        "id,fecha,placa,importe,observaciones"
+
+    df = consultar_tabla(
+        "gasolina",
+        ["id", "fecha", "placa",
+         "importe", "observaciones"],
+        placa, desde, hasta
     )
-
-    if desde:
-        consulta = consulta.gte("fecha", str(desde))
-    if hasta:
-        consulta = consulta.lte("fecha", str(hasta))
-    if placa and placa != "Todas":
-        consulta = consulta.eq("placa", placa)
-
-    respuesta = (
-        consulta.order("fecha", desc=True)
-        .order("placa")
-        .limit(10000)
-        .execute()
-    )
-
-    columnas = [
-        "id", "fecha", "placa", "importe", "observaciones"
-    ]
-
-    df = pd.DataFrame(respuesta.data or [], columns=columnas)
 
     if not df.empty:
-        df["fecha"] = pd.to_datetime(df["fecha"]).dt.date
         df["importe"] = pd.to_numeric(
             df["importe"], errors="coerce"
         ).fillna(0)
@@ -136,48 +153,14 @@ def leer(desde=None, hasta=None, placa=None):
     return df
 
 
-# --------------------------------------------------
-# BASE DE DATOS: KILOMETRAJE
-# --------------------------------------------------
+def guardar_kilometraje(fecha, placa, km,
+                        observaciones=""):
 
-def leer_kilometrajes(placa=None):
-    consulta = supabase.table("kilometraje").select(
-        "id,fecha,placa,kilometraje,observaciones"
-    )
-
-    if placa and placa != "Todas":
-        consulta = consulta.eq("placa", placa)
-
-    respuesta = (
-        consulta.order("fecha", desc=True)
-        .order("placa")
-        .limit(10000)
-        .execute()
-    )
-
-    df = pd.DataFrame(
-        respuesta.data or [],
-        columns=[
-            "id", "fecha", "placa",
-            "kilometraje", "observaciones"
-        ],
-    )
-
-    if not df.empty:
-        df["fecha"] = pd.to_datetime(df["fecha"]).dt.date
-        df["kilometraje"] = pd.to_numeric(df["kilometraje"])
-
-    return df
-
-
-def guardar_kilometraje(
-    fecha, placa, kilometraje, observaciones=""
-):
     datos = {
         "fecha": str(fecha),
         "placa": placa,
-        "kilometraje": int(kilometraje),
-        "observaciones": observaciones.strip(),
+        "kilometraje": int(km),
+        "observaciones": observaciones.strip()
     }
 
     return (
@@ -187,40 +170,107 @@ def guardar_kilometraje(
     )
 
 
-# --------------------------------------------------
-# FILTRO DE FECHAS
-# --------------------------------------------------
+def leer_kilometrajes(placa=None):
 
-def rango_fechas():
+    df = consultar_tabla(
+        "kilometraje",
+        ["id", "fecha", "placa",
+         "kilometraje", "observaciones"],
+        placa
+    )
+
+    if not df.empty:
+        df["kilometraje"] = pd.to_numeric(
+            df["kilometraje"], errors="coerce"
+        ).fillna(0)
+
+    return df
+
+
+# ==========================================
+# FUNCIONES DE MANTENIMIENTO
+# ==========================================
+
+def guardar_mantenimiento(
+    fecha, placa, categoria, tipo_servicio,
+    kilometraje, costo, taller, observaciones
+):
+
+    datos = {
+        "fecha": str(fecha),
+        "placa": placa,
+        "categoria": categoria,
+        "tipo_servicio": tipo_servicio,
+        "kilometraje": kilometraje,
+        "costo": float(costo),
+        "taller": taller.strip(),
+        "observaciones": observaciones.strip()
+    }
+
+    return (
+        supabase.table("mantenimientos")
+        .insert(datos)
+        .execute()
+    )
+
+
+def leer_mantenimientos(
+    placa=None, desde=None, hasta=None
+):
+
+    columnas = [
+        "id", "fecha", "placa", "categoria",
+        "tipo_servicio", "kilometraje",
+        "costo", "taller", "observaciones"
+    ]
+
+    df = consultar_tabla(
+        "mantenimientos",
+        columnas, placa, desde, hasta
+    )
+
+    if not df.empty:
+        df["costo"] = pd.to_numeric(
+            df["costo"], errors="coerce"
+        ).fillna(0)
+
+    return df
+
+
+def rango_fechas(clave="general"):
+
     c1, c2 = st.columns(2)
 
     desde = c1.date_input(
         "Desde",
         value=date.today() - timedelta(days=6),
-        key="desde",
+        key=f"desde_{clave}"
     )
 
     hasta = c2.date_input(
         "Hasta",
         value=date.today(),
-        key="hasta",
+        key=f"hasta_{clave}"
     )
 
     if desde > hasta:
         st.error(
-            "La fecha inicial no puede ser posterior a la final."
+            "La fecha inicial no puede ser posterior "
+            "a la fecha final."
         )
         return None
 
     return desde, hasta
 
 
-# --------------------------------------------------
-# INTERFAZ PRINCIPAL
-# --------------------------------------------------
+# ==========================================
+# MENU PRINCIPAL
+# ==========================================
 
 st.title("🚐 Control de Flotilla")
-st.caption("Versión 2.1 · Gasolina y kilometraje semanal")
+st.caption(
+    "Versión 2.2 · Gasolina, kilometraje y mantenimiento"
+)
 
 seccion = st.sidebar.radio(
     "Módulo",
@@ -229,158 +279,30 @@ seccion = st.sidebar.radio(
         "Registrar gasolina",
         "Consultar",
         "Kilometraje",
-        "Carga inicial",
-    ],
+        "Mantenimiento",
+        "Carga inicial"
+    ]
 )
 
 
-# --------------------------------------------------
-# REGISTRAR GASOLINA
-# --------------------------------------------------
+# ==========================================
+# DASHBOARD
+# ==========================================
 
-if seccion == "Registrar gasolina":
-    st.subheader("⛽ Registrar gasto")
+if seccion == "Dashboard":
 
-    with st.form("form_gasolina"):
-        c1, c2 = st.columns(2)
-
-        fecha = c1.date_input(
-            "Fecha", value=date.today()
-        )
-
-        placa = c2.selectbox(
-            "Camioneta", CAMIONETAS
-        )
-
-        importe = st.number_input(
-            "Importe ($)",
-            min_value=0.0,
-            max_value=100000.0,
-            value=0.0,
-            step=50.0,
-            format="%.2f",
-        )
-
-        observaciones = st.text_input(
-            "Observaciones",
-            placeholder="Estación, ticket o comentario (opcional)",
-        )
-
-        confirmar = st.checkbox(
-            "Confirmo que la fecha, camioneta e importe son correctos."
-        )
-
-        enviar = st.form_submit_button(
-            "Guardar gasto",
-            type="primary",
-        )
-
-    if enviar:
-        if importe <= 0:
-            st.error("El importe debe ser mayor que cero.")
-
-        elif not confirmar:
-            st.warning(
-                "Confirma los datos antes de guardar."
-            )
-
-        else:
-            try:
-                guardar(
-                    fecha, placa, importe, observaciones
-                )
-
-                st.success(
-                    f"Registro guardado: {placa} · "
-                    f"${importe:,.2f} · {fecha}"
-                )
-
-                st.info(
-                    "Si ya había un registro de esa camioneta "
-                    "en esa fecha, se actualizó en lugar de duplicarse."
-                )
-
-            except Exception as e:
-                st.error(
-                    f"No se pudo guardar en Supabase: {e}"
-                )
-
-
-# --------------------------------------------------
-# CONSULTAR GASOLINA
-# --------------------------------------------------
-
-elif seccion == "Consultar":
-    st.subheader("🔎 Consultar gastos")
-
-    fechas = rango_fechas()
-
-    placa = st.selectbox(
-        "Camioneta", ["Todas"] + CAMIONETAS
-    )
-
-    if fechas:
-        try:
-            df = leer(
-                fechas[0], fechas[1], placa
-            )
-
-            if df.empty:
-                st.info(
-                    "No hay registros en el periodo seleccionado."
-                )
-
-            else:
-                st.metric(
-                    "Total del periodo",
-                    f"${df['importe'].sum():,.2f}",
-                )
-
-                st.dataframe(
-                    df,
-                    use_container_width=True,
-                    hide_index=True,
-                    column_config={
-                        "importe": st.column_config.NumberColumn(
-                            "Importe ($)",
-                            format="$%.2f",
-                        )
-                    },
-                )
-
-                st.download_button(
-                    "Descargar CSV",
-                    df.to_csv(index=False).encode(
-                        "utf-8-sig"
-                    ),
-                    "gasolina_consulta.csv",
-                    "text/csv",
-                )
-
-        except Exception as e:
-            st.error(
-                f"Error al consultar los registros: {e}"
-            )
-
-
-# --------------------------------------------------
-# DASHBOARD DE GASOLINA
-# --------------------------------------------------
-
-elif seccion == "Dashboard":
     st.subheader("📊 Resumen operativo")
 
-    fechas = rango_fechas()
+    fechas = rango_fechas("dashboard")
 
     if fechas:
         try:
-            df = leer(
-                fechas[0], fechas[1]
-            )
+            df = leer(fechas[0], fechas[1])
 
             if df.empty:
                 st.info(
-                    "No hay gastos registrados en este periodo."
+                    "No hay gastos registrados "
+                    "en este periodo."
                 )
 
             else:
@@ -388,15 +310,24 @@ elif seccion == "Dashboard":
 
                 dias = max(
                     (fechas[1] - fechas[0]).days + 1,
-                    1,
+                    1
                 )
 
-                promedio = total / dias
+                m1, m2, m3 = st.columns(3)
 
-                por_placa = (
-                    df.groupby("placa")["importe"]
-                    .sum()
-                    .sort_values(ascending=False)
+                m1.metric(
+                    "Gasto total",
+                    f"${total:,.2f}"
+                )
+
+                m2.metric(
+                    "Camionetas con gasto",
+                    df["placa"].nunique()
+                )
+
+                m3.metric(
+                    "Promedio diario",
+                    f"${total / dias:,.2f}"
                 )
 
                 por_dia = (
@@ -405,21 +336,10 @@ elif seccion == "Dashboard":
                     .sort_index()
                 )
 
-                m1, m2, m3 = st.columns(3)
-
-                m1.metric(
-                    "Gasto total",
-                    f"${total:,.2f}",
-                )
-
-                m2.metric(
-                    "Camionetas con gasto",
-                    df["placa"].nunique(),
-                )
-
-                m3.metric(
-                    "Promedio diario",
-                    f"${promedio:,.2f}",
+                por_placa = (
+                    df.groupby("placa")["importe"]
+                    .sum()
+                    .sort_values(ascending=False)
                 )
 
                 st.write("### Gasto por día")
@@ -433,95 +353,210 @@ elif seccion == "Dashboard":
                 st.dataframe(
                     df.head(10),
                     use_container_width=True,
-                    hide_index=True,
+                    hide_index=True
                 )
 
         except Exception as e:
-            st.error(
-                f"No se pudo cargar el dashboard: {e}"
+            st.error(f"Error al cargar dashboard: {e}")
+
+
+# ==========================================
+# REGISTRAR GASOLINA
+# ==========================================
+
+elif seccion == "Registrar gasolina":
+
+    st.subheader("⛽ Registrar gasto de gasolina")
+
+    with st.form("form_gasolina"):
+
+        c1, c2 = st.columns(2)
+
+        fecha = c1.date_input(
+            "Fecha",
+            value=date.today()
+        )
+
+        placa = c2.selectbox(
+            "Camioneta",
+            CAMIONETAS
+        )
+
+        importe = st.number_input(
+            "Importe ($)",
+            min_value=0.0,
+            max_value=100000.0,
+            value=0.0,
+            step=50.0,
+            format="%.2f"
+        )
+
+        observaciones = st.text_input(
+            "Observaciones",
+            placeholder="Estación, ticket o comentario"
+        )
+
+        confirmar = st.checkbox(
+            "Confirmo que los datos son correctos."
+        )
+
+        enviar = st.form_submit_button(
+            "Guardar gasto",
+            type="primary"
+        )
+
+    if enviar:
+
+        if importe <= 0:
+            st.error("El importe debe ser mayor que cero.")
+
+        elif not confirmar:
+            st.warning("Confirma los datos.")
+
+        else:
+            try:
+                guardar(
+                    fecha, placa,
+                    importe, observaciones
+                )
+
+                st.success(
+                    f"Gasto guardado: {placa} · "
+                    f"${importe:,.2f}"
+                )
+
+                st.info(
+                    "Si ya había un gasto de esa "
+                    "camioneta en esa fecha, "
+                    "se actualizó el registro."
+                )
+
+            except Exception as e:
+                st.error(f"Error al guardar: {e}")
+
+
+# ==========================================
+# CONSULTAR GASOLINA
+# ==========================================
+
+elif seccion == "Consultar":
+
+    st.subheader("🔎 Consultar gastos")
+
+    fechas = rango_fechas("gasolina")
+
+    placa = st.selectbox(
+        "Camioneta",
+        ["Todas"] + CAMIONETAS
+    )
+
+    if fechas:
+        try:
+            df = leer(
+                fechas[0], fechas[1], placa
             )
 
+            if df.empty:
+                st.info(
+                    "No hay registros en este periodo."
+                )
 
-# --------------------------------------------------
-# MÓDULO DE KILOMETRAJE SEMANAL
-# --------------------------------------------------
+            else:
+                st.metric(
+                    "Total del periodo",
+                    f"${df['importe'].sum():,.2f}"
+                )
+
+                st.dataframe(
+                    df,
+                    use_container_width=True,
+                    hide_index=True
+                )
+
+                st.download_button(
+                    "Descargar CSV",
+                    df.to_csv(index=False).encode(
+                        "utf-8-sig"
+                    ),
+                    "gasolina_consulta.csv",
+                    "text/csv"
+                )
+
+        except Exception as e:
+            st.error(f"Error al consultar: {e}")
+
+
+# ==========================================
+# KILOMETRAJE SEMANAL
+# ==========================================
 
 elif seccion == "Kilometraje":
+
     st.subheader("🚐 Kilometraje semanal")
 
     st.caption(
-        "Solicita por WhatsApp la foto del odómetro "
-        "cada lunes. Registra el kilometraje de la "
-        "camioneta, no del chofer."
+        "Solicita cada lunes por WhatsApp "
+        "la foto del odómetro. "
+        "El kilometraje corresponde a la camioneta, "
+        "no al chofer."
     )
 
-    tab_registrar, tab_historial = st.tabs(
-        [
-            "Registrar kilometraje",
-            "Consultar historial",
-        ]
-    )
+    tab1, tab2 = st.tabs([
+        "Registrar kilometraje",
+        "Consultar historial"
+    ])
 
-    # ----------------------------------------------
-    # REGISTRAR KILOMETRAJE
-    # ----------------------------------------------
+    with tab1:
 
-    with tab_registrar:
         lunes_actual = (
             date.today()
             - timedelta(days=date.today().weekday())
         )
 
         with st.form("form_kilometraje"):
+
             c1, c2 = st.columns(2)
 
             fecha_km = c1.date_input(
                 "Fecha de lectura",
-                value=lunes_actual,
+                value=lunes_actual
             )
 
             placa_km = c2.selectbox(
                 "Camioneta",
-                CAMIONETAS,
-                key="placa_km",
+                CAMIONETAS
             )
 
             km = st.number_input(
-                "Kilometraje que marca el odómetro",
+                "Kilometraje del odómetro",
                 min_value=0,
                 max_value=9999999,
                 value=0,
-                step=1,
-                format="%d",
+                step=1
             )
 
             obs_km = st.text_input(
-                "Observaciones (opcional)",
-                placeholder=(
-                    "Nombre del chofer, comentario "
-                    "o evidencia recibida"
-                ),
+                "Observaciones",
+                placeholder="Chofer o comentario"
             )
 
             confirmar_km = st.checkbox(
-                "Confirmo que revisé la placa, "
-                "fecha y lectura del odómetro."
+                "Confirmo la placa, fecha y kilometraje."
             )
 
             enviar_km = st.form_submit_button(
                 "Guardar kilometraje",
-                type="primary",
+                type="primary"
             )
 
         if enviar_km:
+
             if not confirmar_km:
-                st.warning(
-                    "Confirma los datos antes de guardar."
-                )
+                st.warning("Confirma los datos.")
 
             elif fecha_km > date.today():
                 st.error(
-                    "La fecha de lectura no puede ser futura."
+                    "No puedes registrar una fecha futura."
                 )
 
             else:
@@ -545,169 +580,451 @@ elif seccion == "Kilometraje":
                     error = None
 
                     if not anteriores.empty:
-                        km_anterior = int(
+                        anterior = int(
                             anteriores.sort_values(
                                 "fecha"
                             ).iloc[-1]["kilometraje"]
                         )
 
-                        if km < km_anterior:
+                        if km < anterior:
                             error = (
-                                f"La lectura ({km:,} km) es "
-                                f"menor que una lectura anterior "
-                                f"({km_anterior:,} km). "
-                                "Revisa el dato."
+                                "El kilometraje es menor "
+                                "que una lectura anterior."
                             )
 
                     if not posteriores.empty:
-                        km_posterior = int(
+                        posterior = int(
                             posteriores.sort_values(
                                 "fecha"
                             ).iloc[0]["kilometraje"]
                         )
 
-                        if km > km_posterior:
+                        if km > posterior:
                             error = (
-                                f"La lectura ({km:,} km) supera "
-                                f"una lectura posterior "
-                                f"({km_posterior:,} km). "
-                                "Revisa el dato."
+                                "El kilometraje supera "
+                                "una lectura posterior."
                             )
 
                     if error:
                         st.error(error)
 
                     else:
-                        existente = not historial[
-                            historial["fecha"] == fecha_km
-                        ].empty
-
                         guardar_kilometraje(
                             fecha_km,
                             placa_km,
                             km,
-                            obs_km,
+                            obs_km
                         )
 
-                        if existente:
-                            st.success(
-                                f"Lectura actualizada: "
-                                f"{placa_km} · "
-                                f"{km:,} km · {fecha_km}"
-                            )
-                        else:
-                            st.success(
-                                f"Lectura guardada: "
-                                f"{placa_km} · "
-                                f"{km:,} km · {fecha_km}"
-                            )
+                        st.success(
+                            "Kilometraje guardado correctamente."
+                        )
 
                         st.info(
-                            "Una camioneta tiene una lectura "
-                            "por fecha. Si guardas otra vez "
-                            "la misma fecha, reemplazarás "
-                            "la lectura anterior."
+                            "Una nueva lectura con la misma "
+                            "fecha y camioneta reemplazará "
+                            "la lectura existente."
                         )
 
                 except Exception as e:
                     st.error(
-                        f"No se pudo guardar el kilometraje: {e}"
+                        f"Error al guardar kilometraje: {e}"
                     )
 
-    # ----------------------------------------------
-    # CONSULTAR HISTORIAL
-    # ----------------------------------------------
+    with tab2:
 
-    with tab_historial:
-        placa_consulta_km = st.selectbox(
+        placa_consulta = st.selectbox(
             "Consultar camioneta",
             ["Todas"] + CAMIONETAS,
-            key="placa_consulta_km",
+            key="consulta_km"
         )
 
         try:
-            datos_km = leer_kilometrajes(
-                placa_consulta_km
+            df = leer_kilometrajes(
+                placa_consulta
             )
 
-            if datos_km.empty:
+            if df.empty:
                 st.info(
-                    "Todavía no hay lecturas de "
-                    "kilometraje registradas."
+                    "Todavía no hay lecturas "
+                    "de kilometraje registradas."
                 )
 
             else:
                 st.metric(
                     "Lecturas registradas",
-                    len(datos_km),
+                    len(df)
                 )
 
-                if placa_consulta_km != "Todas":
-                    ordenado = datos_km.sort_values(
-                        "fecha"
-                    )
+                if placa_consulta != "Todas":
+
+                    ordenado = df.sort_values("fecha")
 
                     ultimo = ordenado.iloc[-1]
 
                     st.metric(
                         "Última lectura",
-                        f"{int(ultimo['kilometraje']):,} km",
+                        f"{int(ultimo['kilometraje']):,} km"
                     )
 
                     if len(ordenado) >= 2:
+
                         previo = ordenado.iloc[-2]
 
-                        diferencia = int(
-                            ultimo["kilometraje"]
-                            - previo["kilometraje"]
+                        diferencia = (
+                            int(ultimo["kilometraje"])
+                            - int(previo["kilometraje"])
                         )
 
                         st.metric(
-                            "Recorrido entre las dos "
-                            "últimas lecturas",
-                            f"{diferencia:,} km",
+                            "Recorrido entre últimas lecturas",
+                            f"{diferencia:,} km"
                         )
 
                 st.dataframe(
-                    datos_km,
+                    df,
                     use_container_width=True,
-                    hide_index=True,
-                    column_config={
-                        "kilometraje": st.column_config.NumberColumn(
-                            "Kilometraje (km)",
-                            format="%d",
-                        )
-                    },
+                    hide_index=True
                 )
 
                 st.download_button(
                     "Descargar kilometrajes CSV",
-                    datos_km.to_csv(
-                        index=False
-                    ).encode("utf-8-sig"),
-                    "kilometraje_consulta.csv",
-                    "text/csv",
+                    df.to_csv(index=False).encode(
+                        "utf-8-sig"
+                    ),
+                    "kilometrajes.csv",
+                    "text/csv"
                 )
 
         except Exception as e:
             st.error(
-                f"No se pudo consultar el kilometraje: {e}"
+                f"Error al consultar kilometraje: {e}"
             )
 
 
-# --------------------------------------------------
-# CARGA INICIAL DE GASOLINA
-# --------------------------------------------------
+# ==========================================
+# NUEVO MODULO: MANTENIMIENTO
+# ==========================================
 
-else:
+elif seccion == "Mantenimiento":
+
+    st.subheader("🔧 Control de mantenimiento")
+
+    st.caption(
+        "Registra servicios preventivos y "
+        "reparaciones correctivas por camioneta."
+    )
+
+    tab_registro, tab_historial = st.tabs([
+        "Registrar mantenimiento",
+        "Consultar historial"
+    ])
+
+    # --------------------------------------
+    # REGISTRAR MANTENIMIENTO
+    # --------------------------------------
+
+    with tab_registro:
+
+        with st.form("form_mantenimiento"):
+
+            c1, c2 = st.columns(2)
+
+            fecha_m = c1.date_input(
+                "Fecha del servicio",
+                value=date.today()
+            )
+
+            placa_m = c2.selectbox(
+                "Camioneta",
+                CAMIONETAS,
+                key="placa_mantenimiento"
+            )
+
+            categoria = st.selectbox(
+                "Categoría",
+                ["Preventivo", "Correctivo"]
+            )
+
+            servicios_preventivos = [
+                "Cambio de aceite",
+                "Cambio de filtros",
+                "Cambio de anticongelante",
+                "Revisión de frenos",
+                "Revisión de suspensión",
+                "Afinación",
+                "Revisión general",
+                "Cambio de llantas",
+                "Otro"
+            ]
+
+            servicios_correctivos = [
+                "Reparación de motor",
+                "Reparación de transmisión",
+                "Reparación de frenos",
+                "Reparación de suspensión",
+                "Sistema de enfriamiento",
+                "Sistema eléctrico",
+                "Reparación de llantas",
+                "Falla mecánica general",
+                "Otro"
+            ]
+
+            if categoria == "Preventivo":
+                opciones = servicios_preventivos
+            else:
+                opciones = servicios_correctivos
+
+            tipo_servicio = st.selectbox(
+                "Servicio realizado",
+                opciones
+            )
+
+            if tipo_servicio == "Otro":
+                tipo_servicio = st.text_input(
+                    "Especifica el servicio"
+                ).strip()
+
+            c3, c4 = st.columns(2)
+
+            km_m = c3.number_input(
+                "Kilometraje al realizar el servicio",
+                min_value=0,
+                max_value=9999999,
+                value=0,
+                step=1
+            )
+
+            costo_m = c4.number_input(
+                "Costo del mantenimiento ($)",
+                min_value=0.0,
+                max_value=1000000.0,
+                value=0.0,
+                step=100.0,
+                format="%.2f"
+            )
+
+            taller = st.text_input(
+                "Taller o mecánico",
+                placeholder="Nombre del taller o responsable"
+            )
+
+            observaciones_m = st.text_area(
+                "Observaciones",
+                placeholder=(
+                    "Describe el trabajo realizado, "
+                    "refacciones utilizadas o falla detectada."
+                )
+            )
+
+            confirmar_m = st.checkbox(
+                "Confirmo que los datos del servicio son correctos."
+            )
+
+            enviar_m = st.form_submit_button(
+                "Guardar mantenimiento",
+                type="primary"
+            )
+
+        if enviar_m:
+
+            if not confirmar_m:
+                st.warning(
+                    "Debes confirmar los datos."
+                )
+
+            elif fecha_m > date.today():
+                st.error(
+                    "La fecha no puede ser futura."
+                )
+
+            elif not tipo_servicio:
+                st.error(
+                    "Especifica el servicio realizado."
+                )
+
+            else:
+                try:
+                    guardar_mantenimiento(
+                        fecha_m,
+                        placa_m,
+                        categoria,
+                        tipo_servicio,
+                        km_m if km_m > 0 else None,
+                        costo_m,
+                        taller,
+                        observaciones_m
+                    )
+
+                    st.success(
+                        "¡Mantenimiento registrado correctamente!"
+                    )
+
+                    st.write(
+                        f"**Camioneta:** {placa_m}"
+                    )
+
+                    st.write(
+                        f"**Categoría:** {categoria}"
+                    )
+
+                    st.write(
+                        f"**Servicio:** {tipo_servicio}"
+                    )
+
+                    st.write(
+                        f"**Costo:** ${costo_m:,.2f}"
+                    )
+
+                except Exception as e:
+                    st.error(
+                        f"No se pudo guardar: {e}"
+                    )
+
+    # --------------------------------------
+    # CONSULTAR MANTENIMIENTOS
+    # --------------------------------------
+
+    with tab_historial:
+
+        st.write("### Historial de servicios")
+
+        placa_filtro = st.selectbox(
+            "Camioneta",
+            ["Todas"] + CAMIONETAS,
+            key="filtro_mantenimiento"
+        )
+
+        categoria_filtro = st.selectbox(
+            "Categoría",
+            ["Todas", "Preventivo", "Correctivo"],
+            key="categoria_filtro"
+        )
+
+        fechas_m = rango_fechas(
+            "mantenimiento"
+        )
+
+        if fechas_m:
+            try:
+                df_m = leer_mantenimientos(
+                    placa_filtro,
+                    fechas_m[0],
+                    fechas_m[1]
+                )
+
+                if categoria_filtro != "Todas":
+                    df_m = df_m[
+                        df_m["categoria"] == categoria_filtro
+                    ]
+
+                if df_m.empty:
+                    st.info(
+                        "Todavía no hay mantenimientos "
+                        "registrados para estos filtros."
+                    )
+
+                else:
+                    total_m = df_m["costo"].sum()
+
+                    total_preventivo = df_m.loc[
+                        df_m["categoria"] == "Preventivo",
+                        "costo"
+                    ].sum()
+
+                    total_correctivo = df_m.loc[
+                        df_m["categoria"] == "Correctivo",
+                        "costo"
+                    ].sum()
+
+                    m1, m2, m3 = st.columns(3)
+
+                    m1.metric(
+                        "Gasto total",
+                        f"${total_m:,.2f}"
+                    )
+
+                    m2.metric(
+                        "Mantenimiento preventivo",
+                        f"${total_preventivo:,.2f}"
+                    )
+
+                    m3.metric(
+                        "Mantenimiento correctivo",
+                        f"${total_correctivo:,.2f}"
+                    )
+
+                    st.write(
+                        "### Gastos por categoría"
+                    )
+
+                    resumen_categoria = (
+                        df_m.groupby("categoria")["costo"]
+                        .sum()
+                    )
+
+                    st.bar_chart(
+                        resumen_categoria
+                    )
+
+                    st.write(
+                        "### Gastos por camioneta"
+                    )
+
+                    resumen_camionetas = (
+                        df_m.groupby("placa")["costo"]
+                        .sum()
+                        .sort_values(ascending=False)
+                    )
+
+                    st.bar_chart(
+                        resumen_camionetas
+                    )
+
+                    st.write(
+                        "### Servicios registrados"
+                    )
+
+                    st.dataframe(
+                        df_m,
+                        use_container_width=True,
+                        hide_index=True,
+                        column_config={
+                            "costo": st.column_config.NumberColumn(
+                                "Costo ($)",
+                                format="$%.2f"
+                            )
+                        }
+                    )
+
+                    st.download_button(
+                        "Descargar historial CSV",
+                        df_m.to_csv(
+                            index=False
+                        ).encode("utf-8-sig"),
+                        "historial_mantenimiento.csv",
+                        "text/csv"
+                    )
+
+            except Exception as e:
+                st.error(
+                    f"Error al consultar mantenimientos: {e}"
+                )
+
+
+# ==========================================
+# CARGA INICIAL DE GASOLINA
+# ==========================================
+
+elif seccion == "Carga inicial":
+
     st.subheader("📥 Carga inicial")
 
     st.warning(
-        "Esta carga utiliza una combinación de "
-        "fecha y camioneta. Si ya existe ese registro, "
-        "actualiza el importe. No la uses para importar "
-        "otra vez datos históricos sin verificar "
-        "primero las fechas."
+        "Esta función actualiza registros existentes "
+        "si coinciden la fecha y la camioneta. "
+        "No vuelvas a cargar datos históricos "
+        "sin verificar primero las fechas."
     )
 
     lunes = st.date_input(
@@ -715,12 +1032,13 @@ else:
         value=(
             date.today()
             - timedelta(days=date.today().weekday())
-        ),
+        )
     )
 
     st.write(
-        "Totales de referencia: lunes $11,850 · "
-        "martes $10,750 · miércoles $400."
+        "Totales de referencia: "
+        "lunes $11,850 · martes $10,750 · "
+        "miércoles $400."
     )
 
     confirmar_carga = st.checkbox(
@@ -730,8 +1048,9 @@ else:
 
     if st.button(
         "Cargar datos iniciales",
-        type="primary",
+        type="primary"
     ):
+
         if not confirmar_carga:
             st.warning(
                 "Confirma las fechas antes de cargar."
@@ -742,28 +1061,25 @@ else:
                 cantidad = 0
 
                 for placa, importes in INICIAL.items():
+
                     for offset, importe in enumerate(importes):
+
                         if importe > 0:
+
                             guardar(
                                 lunes + timedelta(
                                     days=offset
                                 ),
                                 placa,
                                 importe,
-                                "Carga inicial desde tabla",
+                                "Carga inicial desde tabla"
                             )
+
                             cantidad += 1
 
                 st.success(
-                    f"Proceso terminado. Se procesaron "
-                    f"{cantidad} combinaciones de "
-                    "fecha y camioneta."
-                )
-
-                st.info(
-                    "Los registros existentes se "
-                    "actualizaron. Consulta el periodo "
-                    "para verificar los totales."
+                    f"Proceso terminado. "
+                    f"Se procesaron {cantidad} registros."
                 )
 
             except Exception as e:
