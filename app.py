@@ -285,8 +285,8 @@ seccion = st.sidebar.radio(
     ]
 )
 if seccion == "Ingresos por rutas":
-    st.switch_page("pages/Ingresos_por_rutas.py")
-
+    st.info("Selecciona 'Ingresos por rutas' en el menú de páginas de Streamlit.")
+    st.stop()
 
 # ==========================================
 # DASHBOARD
