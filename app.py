@@ -280,9 +280,12 @@ seccion = st.sidebar.radio(
         "Consultar",
         "Kilometraje",
         "Mantenimiento",
+        "Ingresos por rutas",
         "Carga inicial"
     ]
 )
+if seccion == "Ingresos por rutas":
+    st.switch_page("pages/Ingresos_por_rutas.py")
 
 
 # ==========================================
