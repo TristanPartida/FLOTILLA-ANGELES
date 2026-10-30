@@ -281,6 +281,7 @@ seccion = st.sidebar.radio(
         "Kilometraje",
         "Mantenimiento",
         "Ingresos por rutas",
+        "Administrar camionetas",
         "Carga inicial"
     ]
 )
@@ -1224,3 +1225,145 @@ else:
         use_container_width=True,
         hide_index=True
     )
+
+
+
+# ==========================================
+# ADMINISTRAR CAMIONETAS
+# ==========================================
+
+if seccion == "Administrar camionetas":
+
+    st.title("🚐 Administrar camionetas")
+    st.caption("Registro y administración de unidades de la flotilla")
+
+    tab1, tab2 = st.tabs([
+        "Agregar camioneta",
+        "Consultar y administrar"
+    ])
+
+    # REGISTRAR CAMIONETA
+    with tab1:
+
+        st.subheader("Registrar nueva camioneta")
+
+        with st.form("form_nueva_camioneta"):
+
+            placa_nueva = st.text_input(
+                "Placa o identificador de la camioneta"
+            )
+
+            nombre_nuevo = st.text_input(
+                "Nombre o descripción (opcional)"
+            )
+
+            guardar_camioneta = st.form_submit_button(
+                "Guardar camioneta"
+            )
+
+        if guardar_camioneta:
+
+            placa_nueva = placa_nueva.strip().upper()
+            nombre_nuevo = nombre_nuevo.strip()
+
+            if not placa_nueva:
+                st.warning("Debes escribir la placa o identificador.")
+
+            else:
+                try:
+                    existente = (
+                        supabase.table("catalogo_camionetas")
+                        .select("placa")
+                        .eq("placa", placa_nueva)
+                        .execute()
+                    )
+
+                    if existente.data:
+                        st.warning("Esta camioneta ya está registrada.")
+
+                    else:
+                        supabase.table("catalogo_camionetas").insert({
+                            "placa": placa_nueva,
+                            "nombre": nombre_nuevo,
+                            "activa": True
+                        }).execute()
+
+                        st.success(
+                            f"Camioneta {placa_nueva} registrada correctamente."
+                        )
+
+                except Exception as e:
+                    st.error(f"No se pudo guardar: {e}")
+
+    # CONSULTAR CAMIONETAS
+    with tab2:
+
+        st.subheader("Camionetas registradas")
+
+        try:
+            respuesta = (
+                supabase.table("catalogo_camionetas")
+                .select("*")
+                .order("placa")
+                .execute()
+            )
+
+            datos = respuesta.data or []
+
+            if datos:
+
+                df_camionetas = pd.DataFrame(datos)
+
+                c1, c2, c3 = st.columns(3)
+
+                c1.metric(
+                    "Total registradas",
+                    len(df_camionetas)
+                )
+
+                c2.metric(
+                    "Activas",
+                    int(df_camionetas["activa"].sum())
+                )
+
+                c3.metric(
+                    "Inactivas",
+                    int((~df_camionetas["activa"]).sum())
+                )
+
+                st.dataframe(
+                    df_camionetas,
+                    use_container_width=True,
+                    hide_index=True
+                )
+
+                st.divider()
+                st.subheader("Cambiar estado de una camioneta")
+
+                placa_editar = st.selectbox(
+                    "Selecciona una camioneta",
+                    df_camionetas["placa"].tolist()
+                )
+
+                estado_nuevo = st.selectbox(
+                    "Nuevo estado",
+                    ["Activa", "Inactiva"]
+                )
+
+                if st.button("Actualizar estado"):
+
+                    supabase.table("catalogo_camionetas").update({
+                        "activa": estado_nuevo == "Activa"
+                    }).eq(
+                        "placa", placa_editar
+                    ).execute()
+
+                    st.success("Estado actualizado correctamente.")
+                    st.rerun()
+
+            else:
+                st.info("Todavía no hay camionetas registradas.")
+
+        except Exception as e:
+            st.error(f"No se pudieron consultar las camionetas: {e}")
+
