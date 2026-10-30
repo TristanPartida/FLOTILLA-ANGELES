@@ -400,10 +400,12 @@ elif seccion == "Registrar gasolina":
         )
 
         
-placa = c2.selectbox(
-    "Camioneta",
-    obtener_camionetas()
-)
+
+        placa = c2.selectbox(
+            "Camioneta",
+            obtener_camionetas()
+        )
+
 
         
 
