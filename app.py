@@ -300,6 +300,7 @@ seccion = st.sidebar.radio(
         "Mantenimiento",
         "Ingresos por rutas",
         "Administrar camionetas",
+        "Gastos extras",
         "Carga inicial"
     ]
 )
@@ -1391,4 +1392,149 @@ if seccion == "Administrar camionetas":
 
         except Exception as e:
             st.error(f"No se pudieron consultar las camionetas: {e}")
+
+
+
+# ==========================================
+# GASTOS EXTRAS
+# ==========================================
+
+if seccion == "Gastos extras":
+
+    st.title("💸 Gastos extras")
+    st.caption("Registro de gastos adicionales de la flotilla")
+
+    with st.form("form_gastos_extras"):
+        fecha_extra = st.date_input("Fecha", value=date.today())
+        descripcion_extra = st.text_input("Descripción del gasto")
+        monto_extra = st.number_input(
+            "Monto ($)",
+            min_value=0.0,
+            step=50.0
+        )
+
+        guardar_extra = st.form_submit_button("Guardar gasto")
+
+    if guardar_extra:
+        if not descripcion_extra.strip() or monto_extra <= 0:
+            st.warning("Escribe una descripción y un monto mayor a cero.")
+        else:
+            try:
+                supabase.table("gastos_extras").insert({
+                    "fecha": fecha_extra.isoformat(),
+                    "descripcion": descripcion_extra.strip(),
+                    "monto": float(monto_extra)
+                }).execute()
+
+                st.success("Gasto registrado correctamente.")
+            except Exception as e:
+                st.error(f"No se pudo guardar el gasto: {e}")
+
+    st.divider()
+    st.subheader("📋 Historial de gastos extras")
+
+    try:
+        respuesta = (
+            supabase.table("gastos_extras")
+            .select("id,fecha,descripcion,monto")
+            .order("fecha", desc=True)
+            .execute()
+        )
+
+        gastos = pd.DataFrame(respuesta.data)
+
+        if gastos.empty:
+            st.info("Todavía no hay gastos extras registrados.")
+        else:
+            gastos["monto"] = pd.to_numeric(gastos["monto"])
+            st.metric("Total de gastos extras", f"${gastos['monto'].sum():,.2f}")
+
+            st.dataframe(
+                gastos,
+                use_container_width=True,
+                hide_index=True
+            )
+
+            st.download_button(
+                "Descargar historial CSV",
+                gastos.to_csv(index=False).encode("utf-8-sig"),
+                file_name="gastos_extras.csv",
+                mime="text/csv"
+            )
+
+    except Exception as e:
+        st.error(f"No se pudo consultar el historial: {e}")
+
+
+
+# ==========================================
+# GASTOS EXTRAS
+# ==========================================
+
+if seccion == "Gastos extras":
+
+    st.title("💸 Gastos extras")
+    st.caption("Registro de gastos adicionales de la flotilla")
+
+    with st.form("form_gastos_extras"):
+        fecha_extra = st.date_input("Fecha", value=date.today())
+        descripcion_extra = st.text_input("Descripción del gasto")
+        monto_extra = st.number_input(
+            "Monto ($)",
+            min_value=0.0,
+            step=50.0
+        )
+
+        guardar_extra = st.form_submit_button("Guardar gasto")
+
+    if guardar_extra:
+        if not descripcion_extra.strip() or monto_extra <= 0:
+            st.warning("Escribe una descripción y un monto mayor a cero.")
+        else:
+            try:
+                supabase.table("gastos_extras").insert({
+                    "fecha": fecha_extra.isoformat(),
+                    "descripcion": descripcion_extra.strip(),
+                    "monto": float(monto_extra)
+                }).execute()
+
+                st.success("Gasto registrado correctamente.")
+            except Exception as e:
+                st.error(f"No se pudo guardar el gasto: {e}")
+
+    st.divider()
+    st.subheader("📋 Historial de gastos extras")
+
+    try:
+        respuesta = (
+            supabase.table("gastos_extras")
+            .select("id,fecha,descripcion,monto")
+            .order("fecha", desc=True)
+            .execute()
+        )
+
+        gastos = pd.DataFrame(respuesta.data)
+
+        if gastos.empty:
+            st.info("Todavía no hay gastos extras registrados.")
+        else:
+            gastos["monto"] = pd.to_numeric(gastos["monto"])
+            st.metric("Total de gastos extras", f"${gastos['monto'].sum():,.2f}")
+
+            st.dataframe(
+                gastos,
+                use_container_width=True,
+                hide_index=True
+            )
+
+            st.download_button(
+                "Descargar historial CSV",
+                gastos.to_csv(index=False).encode("utf-8-sig"),
+                file_name="gastos_extras.csv",
+                mime="text/csv"
+            )
+
+    except Exception as e:
+        st.error(f"No se pudo consultar el historial: {e}")
+
 
