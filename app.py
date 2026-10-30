@@ -29,6 +29,24 @@ except Exception as e:
     st.stop()
 
 
+
+def obtener_camionetas():
+    placas = set(CAMIONETAS)
+
+    respuesta = (
+        supabase.table("catalogo_camionetas")
+        .select("placa")
+        .eq("activa", True)
+        .execute()
+    )
+
+    for camioneta in respuesta.data or []:
+        placas.add(camioneta["placa"])
+
+    return sorted(placas)
+-
+
+
 # ==========================================
 # CAMIONETAS
 # ==========================================
@@ -381,10 +399,13 @@ elif seccion == "Registrar gasolina":
             value=date.today()
         )
 
-        placa = c2.selectbox(
-            "Camioneta",
-            CAMIONETAS
-        )
+        
+placa = c2.selectbox(
+    "Camioneta",
+    obtener_camionetas()
+)
+
+        
 
         importe = st.number_input(
             "Importe ($)",
