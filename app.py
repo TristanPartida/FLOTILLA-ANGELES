@@ -44,7 +44,7 @@ def obtener_camionetas():
         placas.add(camioneta["placa"])
 
     return sorted(placas)
--
+
 
 
 # ==========================================
