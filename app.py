@@ -473,7 +473,7 @@ elif seccion == "Consultar":
     fechas = rango_fechas("gasolina")
 
     
-        placa = st.selectbox(
+    placa = st.selectbox(
             "Camioneta",
             ["Todas"] + obtener_camionetas()
         )
